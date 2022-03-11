@@ -112,7 +112,7 @@ namespace HaveIBeenPwned.PwnedPasswordsSpeedChallenge
         internal static async IAsyncEnumerable<string> ParseLinesAsync<T>(this T stream, int pauseThreshold = 1024 * 64, int resumeThreshold = 1024 * 32) where T : Stream
         {
             var inputPipe = new Pipe(new PipeOptions(pauseWriterThreshold: pauseThreshold, resumeWriterThreshold: resumeThreshold, useSynchronizationContext: false));
-            Task copyTask = stream.CopyToAsync(inputPipe.Writer).ContinueWith(CompleteWriter, inputPipe.Writer).Unwrap();
+            Task copyTask = stream.CopyToAsync(inputPipe.Writer).ContinueWith(CompleteWriter, inputPipe.Writer, TaskContinuationOptions.ExecuteSynchronously).Unwrap();
 
             await foreach (string line in inputPipe.Reader.ReadLinesAsync())
             {
@@ -126,13 +126,15 @@ namespace HaveIBeenPwned.PwnedPasswordsSpeedChallenge
         {
             if (previousTask.IsCompleted && state is PipeWriter pipeWriter)
             {
+                /*
                 var flushTask = pipeWriter.FlushAsync();
                 if (!flushTask.IsCompletedSuccessfully)
                 {
                     await flushTask.ConfigureAwait(false);
                 }
+                */
 
-                await pipeWriter.CompleteAsync().ConfigureAwait(false);
+                pipeWriter.Complete();
             }
         }
     }

@@ -293,8 +293,13 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
         }
 
         string prefixFile = Path.Combine(_cacheDir, $"{Convert.ToHexString(hash.Span[..3])[..5]}.txt");
+        ValueTask<AsyncDuplicateLock.Releaser> asyncLock = AsyncDuplicateLock.LockAsync(string.Intern(prefixFile));
+        if(!asyncLock.IsCompletedSuccessfully)
+        {
+            await asyncLock.ConfigureAwait(false);
+        }
 
-        using (await AsyncDuplicateLock.LockAsync(string.Intern(prefixFile)).ConfigureAwait(false))
+        using (asyncLock.Result)
         {
             try
             {

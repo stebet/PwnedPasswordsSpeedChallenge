@@ -39,19 +39,19 @@ namespace HaveIBeenPwned.PwnedPasswordsSpeedChallenge
             return new Releaser(key);
         }
 
-        public static Task<IDisposable> LockAsync(object key)
+        internal static ValueTask<Releaser> LockAsync(object key)
         {
             SemaphoreSlim item = GetOrCreate(key);
-            return !item.Wait(0) ? LockAsyncImpl(item, key) : Task.FromResult<IDisposable>(new Releaser(key));
+            return !item.Wait(0) ? new ValueTask<Releaser>(LockAsyncImpl(item, key)) : ValueTask.FromResult(new Releaser(key));
         }
 
-        private static async Task<IDisposable> LockAsyncImpl(SemaphoreSlim item, object key)
+        private static async Task<Releaser> LockAsyncImpl(SemaphoreSlim item, object key)
         {
             await item.WaitAsync().ConfigureAwait(false);
             return new Releaser(key);
         }
 
-        private sealed class Releaser : IDisposable
+        internal readonly struct Releaser : IDisposable
         {
             public Releaser(object key) => Key = key;
 
