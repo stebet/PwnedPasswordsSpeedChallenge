@@ -199,8 +199,10 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
 
     private async Task PopulateBloomFilter(Settings settings)
     {
-        FileStream file = new FileStream(settings.BloomFilterInput, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, true);
-        await Parallel.ForEachAsync(file.ParseLinesAsync(pauseThreshold: 1*1024*1024, resumeThreshold:1*512*1024), ParseHashLineAsync);
+        using FileStream file = new FileStream(settings.BloomFilterInput, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, true);
+        await Parallel.ForEachAsync(file.ParseLinesAsync(pauseThreshold: 1 * 1024 * 1024, resumeThreshold: 1 * 512 * 1024), ParseHashLineAsync);
+        using FileStream outputFile = new FileStream(settings.BloomFilterName, FileMode.Create, FileAccess.Write, FileShare.None, 16384, true);
+        await _bloomFilter.WriteAsync(outputFile).ConfigureAwait(false);
     }
 
     private ValueTask ParseHashLineAsync(string input, CancellationToken cancellationToken = default)

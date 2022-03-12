@@ -6,6 +6,7 @@ namespace Stebet.BloomFilter;
 
 public class BloomFilter
 {
+    private const int BlockSize = 32768;
     int n;
     double p;
     long m;
@@ -20,11 +21,11 @@ public class BloomFilter
         p = falsePositiveRatio;
         m = (long)Math.Ceiling((n * Math.Log(p)) / Math.Log(1 / Math.Pow(2, Math.Log(2))));
         long numBytes = m / 8;
-        int numBlocks = (int)Math.Ceiling(numBytes / 32768.0);
+        int numBlocks = (int)Math.Ceiling((double)numBytes / BlockSize);
         _filter = new byte[numBlocks][];
         for(int i = 0;i < numBlocks; i++)
         {
-            _filter[i] = new byte[32768];
+            _filter[i] = new byte[BlockSize];
         }
         k = (int)Math.Round((m / n) * Math.Log(2));
         ratio = m / (double)uint.MaxValue;
@@ -63,9 +64,9 @@ public class BloomFilter
     {
         long index = (long)(v * ratio);
         long byteLongIndex = index / 8;
-        long blockIndex = byteLongIndex / 32768;
-        int byteIndex = (int)(byteLongIndex - blockIndex * 32768);
-        return ((int)blockIndex, byteIndex, (int)(index - (blockIndex * 32768 * 8) - (byteIndex * 8)));
+        long blockIndex = byteLongIndex / BlockSize;
+        int byteIndex = (int)(byteLongIndex - blockIndex * BlockSize);
+        return ((int)blockIndex, byteIndex, (int)(index - (blockIndex * BlockSize * 8) - (byteIndex * 8)));
     }
 
     private bool CheckBit(uint v)
@@ -107,5 +108,23 @@ public class BloomFilter
         }
 
         return result;
+    }
+
+    public async Task WriteAsync(Stream stream)
+    {
+        if (stream is null)
+        {
+            throw new ArgumentNullException(nameof(stream));
+        }
+
+        foreach(byte[]? item in _filter)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            await stream.WriteAsync(item).ConfigureAwait(false);
+        }
     }
 }
