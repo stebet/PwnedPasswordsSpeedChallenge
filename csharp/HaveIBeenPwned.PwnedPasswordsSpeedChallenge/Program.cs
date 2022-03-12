@@ -16,6 +16,8 @@ using Microsoft.Win32.SafeHandles;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
+using Stebet.BloomFilter;
+
 var app = new CommandApp<PwnedPasswordsCommand>();
 
 app.Configure(config => config.PropagateExceptions());
@@ -56,6 +58,8 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
     internal HttpClient _httpClient = InitializeHttpClient();
     internal AsyncDuplicateLock _duplicateLock = new();
     internal ConcurrentStack<List<HashEntry>> _hashEntries = new();
+    internal BloomFilter _bloomFilter = new BloomFilter(900_000_000, 0.0000001);
+    internal long _bloomLinesParsed = 0;
 
     public sealed class Settings : CommandSettings
     {
@@ -81,6 +85,16 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
         [CommandOption("-r|--clear-cache")]
         [DefaultValue(false)]
         public bool ClearCache { get; set; }
+
+        [Description("Newline-delimited password list to check against HaveIBeenPwned.")]
+        [CommandOption("-b||--use-bloom-filter")]
+        [DefaultValue("")]
+        public string BloomFilterName { get; init; } = "";
+
+        [Description("Newline-delimited password list to check against HaveIBeenPwned.")]
+        [CommandOption("-f||--populate-bloom-filter")]
+        [DefaultValue("")]
+        public string BloomFilterInput { get; init; } = "";
 
         public override ValidationResult Validate() => string.IsNullOrEmpty(InputFile) ? ValidationResult.Error("[inputFile] argument is required!") : ValidationResult.Success();
     }
@@ -112,6 +126,12 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
             .StartAsync(async ctx =>
             {
                 var timer = Stopwatch.StartNew();
+
+                if (settings.BloomFilterInput.Length > 0)
+                {
+                    await PopulateBloomFilter(settings).ConfigureAwait(false);
+                }
+
                 _statistics.NumPasswords = Helpers.CountLines(settings.InputFile);
 
                 ProgressTask progressTask = ctx.AddTask("[green]Passwords processed[/]", true, _statistics.NumPasswords);
@@ -175,6 +195,36 @@ internal sealed class PwnedPasswordsCommand : Command<PwnedPasswordsCommand.Sett
                     Parallel.ForEach(Directory.EnumerateFiles(_cacheDir, "*", SearchOption.AllDirectories), item => File.Delete(item));
                 });
         }
+    }
+
+    private async Task PopulateBloomFilter(Settings settings)
+    {
+        FileStream file = new FileStream(settings.BloomFilterInput, FileMode.Open, FileAccess.Read, FileShare.Read, 16384, true);
+        await Parallel.ForEachAsync(file.ParseLinesAsync(pauseThreshold: 1*1024*1024, resumeThreshold:1*512*1024), ParseHashLineAsync);
+    }
+
+    private ValueTask ParseHashLineAsync(string input, CancellationToken cancellationToken = default)
+    {
+        ParseHashLine(input);
+        if (Interlocked.Increment(ref _bloomLinesParsed) % 100000 == 0)
+        {
+            AnsiConsole.MarkupLine($"Read {_bloomLinesParsed:N0} hashes.");
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void ParseHashLine(ReadOnlySpan<char> chars)
+    {
+        Span<byte> hashBytes = stackalloc byte[20];
+        var slice = chars.Slice(0, 40);
+
+        for (int i = 0; i < (uint)hashBytes.Length; i++)
+        {
+            hashBytes[i] = (byte)((HashEntry.HexCharToByte(slice[i * 2]) << 4) | HashEntry.HexCharToByte(slice[i * 2 + 1]));
+        }
+
+        _bloomFilter.AddItem(hashBytes);
     }
 
     private static HttpClient InitializeHttpClient()
